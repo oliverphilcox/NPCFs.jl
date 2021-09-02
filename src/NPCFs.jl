@@ -2,8 +2,17 @@ module NPCFs
 export NPCF, compute_npcf_simple, compute_npcf_pairwise, summarize, angular_indices
 
 ### Load packages
-using Printf, Distributed, Rotations, Parameters, WignerSymbols
-using SpecialFunctions, SphericalHarmonics, ClassicalOrthogonalPolynomials, LegendrePolynomials, HypergeometricFunctions
+using Printf: @printf
+using Distributed: @distributed, @sync
+using Parameters: @with_kw
+using Rotations: AngleAxis
+using WignerSymbols: wigner3j, wigner6j
+using SphericalHarmonics: computePlmcostheta
+using LinearAlgebra: cross, norm
+using LegendrePolynomials: Pl
+using HypergeometricFunctions: _₂F₁
+using ClassicalOrthogonalPolynomials: chebyshevt
+using SpecialFunctions: gamma
 
 ### Define basic struct
 
