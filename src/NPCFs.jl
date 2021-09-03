@@ -227,7 +227,7 @@ function compute_npcf_pairwise(inputs::Matrix{Float64}, npcf::NPCF)
         coupling_weights = create_weight_array(npcf)
     else
         # create an empty array for compatibility
-        coupling_weights = Vector{Float64}(undef)
+        coupling_weights = []]
     end
 
     # Work out how many workers are present and chunk memory
@@ -479,7 +479,7 @@ end;
 Compute the NPCF of the `inputs` dataset using primary particles `imin` to `imax` by summing over pairs of particles and utilizing hyperspherical harmonic decompositions.
 This will run the code for a single worker; see ```compute_npcf_pairwise()``` for the wrapper and documentation.
 """
-function _compute_npcf_pairwise(imin::Int64, imax::Int64, inputs::Matrix{Float64}, coupling_weights::Vector{Float64}, npcf::NPCF)
+function _compute_npcf_pairwise(imin::Int64, imax::Int64, inputs::Matrix{Float64}, coupling_weights, npcf::NPCF)
 
     Npart = length(inputs[:,1])
     if npcf.verb;
@@ -489,7 +489,7 @@ function _compute_npcf_pairwise(imin::Int64, imax::Int64, inputs::Matrix{Float64
             println("Iterating over primary particles");
         end
     end
-    
+
     # Set up output array for this worker
     output = create_npcf_array(npcf)
 
