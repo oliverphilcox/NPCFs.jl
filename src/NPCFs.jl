@@ -407,7 +407,7 @@ function _compute_npcf_simple(imin::Int64, imax::Int64, inputs::Matrix{Float64},
                             # Iterate over fifth particle
                             for m in 1:Npart
                                 p5 = shift_positions[m,:]
-                                w5 = w1234*weights[m]
+                                w12345 = w1234*weights[m]
 
                                 if l==m; continue; end
 
