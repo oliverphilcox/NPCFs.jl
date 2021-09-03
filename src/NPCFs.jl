@@ -3,7 +3,7 @@ export NPCF, compute_npcf_simple, compute_npcf_pairwise, summarize, angular_indi
 
 ### Load packages
 using Printf: @printf
-using Distributed: @distributed, @sync
+using Distributed: @sync, @async, @spawnat, nworkers, workers, Future, myid
 using Parameters: @with_kw
 using Rotations: AngleAxis
 using WignerSymbols: wigner3j, wigner6j
@@ -14,7 +14,7 @@ using HypergeometricFunctions: _₂F₁
 using ClassicalOrthogonalPolynomials: chebyshevt
 using SpecialFunctions: gamma
 
-### Define basic struct
+### Define basic NPCF structure
 
 """
     NPCF(N, D, coords = "cartesian", periodic = "false", volume = 1e9, nbins = 10, r_min = 50, r_max = 200, lmax = 2, verb = false, _dr = -1, _boxsize = -1)
@@ -133,11 +133,13 @@ include("utils.jl")
 
 Compute the NPCF by summing over `N`-tuplets of particles given in the `inputs` dataset.
 For `n` particles, the computational cost scales as `n^N`, and is thus not recommended for large `n`.
+Work is distributed approximately equally over all ```nworkers()``` workers provided.
 
 The function is initialized with the `NPCF` class, which specifies all relevant parameters.
 The `inputs` array gives a list of particle positions in `D`-dimensions, and a `D+1`-th column specifying the particle weight.
 The output is a vector array, where the first `N-1` indices specify the radial bins, and the `N`-th index gives the angular bin, collapsed into one dimension (see ```angular_indices``` for conversion to ells).
 Note that we only fill up radial bins satisfying bin1<bin2<...<binN.
+The actual computation is performed in the ```_compute_npcf_simple()``` function; this is just a wrapper function to facilitate multiprocessing.
 
 # Examples
 ```julia-repl
@@ -152,19 +154,142 @@ function compute_npcf_simple(inputs::Matrix{Float64}, npcf::NPCF)
     check_inputs(inputs, npcf)
 
     Npart = length(inputs[:,1])
-    if npcf.verb; @printf("\nAnalyzing dataset with %d particles by summing over all N-tuplets of galaxies\n",Npart); end
+    if npcf.verb; @printf("\nAnalyzing dataset with %d particles using %d workers by summing over all N-tuplets of galaxies\n",Npart,nworkers()); end
 
-    # Set up output array
+    # Set up output array to hold NPCF
+    output = create_npcf_array(npcf)
+
+    # Work out how many workers are present and chunk memory
+    tasks_per_worker = div(Npart,nworkers())+1
+
+    # Now perform the chunking and run the algorithm across separate workers
+    if npcf.verb;
+        if nworkers()>1
+            println("Starting distributed computation");
+        else
+            println("Starting computation");
+        end
+    end
+    chunked_output = Dict{Int,Future}()
+    @sync for (w_i,w) in enumerate(workers())
+        imin = tasks_per_worker*(w_i-1)+1
+        imax = min(imin+tasks_per_worker,Npart+1)-1
+        @async chunked_output[w_i] = @spawnat w _compute_npcf_simple(imin, imax, inputs, npcf)
+    end
+
+    # Now combine the output together
+    for w_i in 1:nworkers()
+        output .+= chunked_output[w_i][]
+    end
+
+    # Apply normalization to the output array
+    normalize_npcf!(output, npcf)
+
+    if npcf.verb; @printf("Calculations complete!\n"); end
+
+    return output
+end;
+
+"""
+    compute_npcf_pairwise(inputs, npcf)
+
+Compute the NPCF of the `inputs` dataset by summing over pairs of particles and utilizing hyperspherical harmonic decompositions.
+For `n` particles, the computational cost scales as `n^2`, and thus can be extended to large `n`.
+Work is distributed approximately equally over all ```nworkers()``` workers provided.
+
+The function is initialized with the `NPCF` class, which specifies all relevant parameters.
+The `inputs` array gives a list of particle positions in `D`-dimensions, and a `D+1`-th column specifying the particle weight.
+The output is a vector array, where the first `N-1` indices specify the radial bins, and the `N`-th index gives the angular bin, collapsed into one dimension (see ```angular_indices``` for conversion to ells).
+Note that we only fill up radial bins satisfying bin1<bin2<...<binN.
+The actual computation is performed in the ```_compute_npcf_pairwise()``` function; this is just a wrapper function to facilitate multiprocessing.
+
+# Examples
+```julia-repl
+julia> inputs = hcat(rand(100,3)*1000.,ones(100)); # 100 randomly distributed 3D particles in [0, 1000], plus weights
+julia> npcf = NPCF(N=4, D=3); # create a 4PCF object in 3D
+julia> output_pairwise = compute_npcf_pairwise(inputs, npcf); # run the pairwise NPCF estimator
+```
+"""
+function compute_npcf_pairwise(inputs::Matrix{Float64}, npcf::NPCF)
+
+    # First check inputs
+    check_inputs(inputs, npcf)
+
+    Npart = length(inputs[:,1])
+    if npcf.verb; @printf("\nAnalyzing dataset with %d particles using %d workers by summing over all N-tuplets of galaxies\n",Npart,nworkers()); end
+
+    # Set up output array to hold NPCF
+    output = create_npcf_array(npcf)
+
+    # Compute array of weights
+    if npcf.N>2
+        if npcf.verb; println("Loading coupling weights"); end
+        coupling_weights = create_weight_array(npcf)
+    else
+        # create an empty array for compatibility
+        coupling_weights = Vector{Float64}(undef)
+    end
+
+    # Work out how many workers are present and chunk memory
+    tasks_per_worker = div(Npart,nworkers())+1
+
+    # Now perform the chunking and run the algorithm across separate workers
+    if npcf.verb;
+        if nworkers()>1
+            println("Starting distributed computation");
+        else
+            println("Starting computation");
+        end
+    end
+    chunked_output = Dict{Int,Future}()
+    @sync for (w_i,w) in enumerate(workers())
+        imin = tasks_per_worker*(w_i-1)+1
+        imax = min(imin+tasks_per_worker,Npart+1)-1
+        @async chunked_output[w_i] = @spawnat w _compute_npcf_pairwise(imin, imax, inputs, coupling_weights, npcf)
+    end
+
+    # Now combine the output together
+    for w_i in 1:nworkers()
+        output .+= chunked_output[w_i][]
+    end
+
+    # Apply normalization to the output array
+    normalize_npcf!(output, npcf)
+
+    if npcf.verb; @printf("Calculations complete!\n"); end
+
+    return output
+end;
+
+## Worker Functions
+
+"""
+    _compute_npcf_simple(imin,imax,inputs,npcf)
+
+Compute the NPCF by summing over `N`-tuplets of particles given in the `inputs` dataset using primary particles `imin` to `imax`.
+This will run the code for a single worker; see ```compute_npcf_simple()``` for the wrapper and documentation.
+"""
+function _compute_npcf_simple(imin::Int64, imax::Int64, inputs::Matrix{Float64}, npcf::NPCF)
+
+    Npart = length(inputs[:,1])
+    if npcf.verb;
+        if nworkers()>1
+            println("Running on thread id $(myid()) for particles $imin to $imax");
+        else
+            println("Iterating over primary particles");
+        end
+    end
+
+    # Set up output array for this worker
     output = create_npcf_array(npcf)
 
     # Define positions and weights
     positions = inputs[:,1:npcf.D]
     weights = inputs[:,npcf.D+1]
 
-    if npcf.verb; println("Iterating over primary particles"); end
+    # Iterate over first particle in required range
+    for i in imin:imax
 
-    # Iterate over first particle
-    @sync @distributed for i in 1:Npart
         p1 = positions[i,:]
         w1 = weights[i]
 
@@ -182,7 +307,7 @@ function compute_npcf_simple(inputs::Matrix{Float64}, npcf::NPCF)
             end
         end
 
-        # Iterate over second particle
+        # Iterate over all secondary particles
         for j in 1:Npart
             p2 = shift_positions[j,:]
             w12 = w1*weights[j]
@@ -345,63 +470,39 @@ function compute_npcf_simple(inputs::Matrix{Float64}, npcf::NPCF)
             end
         end
     end
-
-    # Apply normalization to the output array
-    normalize_npcf!(output, npcf)
-
-    if npcf.verb; @printf("Calculations complete!\n"); end
-
     return output
 end;
 
 """
-    compute_npcf_pairwise(inputs, npcf)
+    _compute_npcf_pairwise(imin, imax, inputs, coupling_weights, npcf)
 
-Compute the NPCF of the `inputs` dataset by summing over pairs of particles and utilizing hyperspherical harmonic decompositions.
-For `n` particles, the computational cost scales as `n^2`, and thus can be extended to large `n`.
-
-The function is initialized with the `NPCF` class, which specifies all relevant parameters.
-The `inputs` array gives a list of particle positions in `D`-dimensions, and a `D+1`-th column specifying the particle weight.
-The output is a vector array, where the first `N-1` indices specify the radial bins, and the `N`-th index gives the angular bin, collapsed into one dimension (see ```angular_indices``` for conversion to ells).
-Note that we only fill up radial bins satisfying bin1<bin2<...<binN.
-
-# Examples
-```julia-repl
-julia> inputs = hcat(rand(100,3)*1000.,ones(100)); # 100 randomly distributed 3D particles in [0, 1000], plus weights
-julia> npcf = NPCF(N=4, D=3); # create a 4PCF object in 3D
-julia> output_pairwise = compute_npcf_pairwise(inputs, npcf); # run the pairwise NPCF estimator
-```
+Compute the NPCF of the `inputs` dataset using primary particles `imin` to `imax` by summing over pairs of particles and utilizing hyperspherical harmonic decompositions.
+This will run the code for a single worker; see ```compute_npcf_pairwise()``` for the wrapper and documentation.
 """
-function compute_npcf_pairwise(inputs::Matrix{Float64}, npcf::NPCF)
+function _compute_npcf_pairwise(imin::Int64, imax::Int64, inputs::Matrix{Float64}, coupling_weights::Vector{Float64}, npcf::NPCF)
 
-    # First check inputs
-    check_inputs(inputs, npcf)
+    Npart = length(inputs[:,1])
+    if npcf.verb;
+        if nworkers()>1
+            println("Running on thread id $(myid()) for particles $imin to $imax");
+        else
+            println("Iterating over primary particles");
+        end
+    end
+    
+    # Set up output array for this worker
+    output = create_npcf_array(npcf)
 
     # Define positions and weights
     positions = inputs[:,1:npcf.D]
     weights = inputs[:,npcf.D+1]
 
-    Npart = length(inputs[:,1])
-    if npcf.verb; @printf("\nAnalyzing dataset with %d particles by summing over pairs of galaxies\n",Npart); end
-
-    # Set up output array
-    if npcf.verb; println("Generating arrays"); end
-    output = create_npcf_array(npcf);
-
     # Define a_l array
     nl = length(hyperspherical_harmonic(zeros(npcf.D),npcf))
     al = zeros(ComplexF64,npcf.nbins,nl)
 
-    # Compute array of weights
-    if npcf.N>2
-        if npcf.verb; println("Loading coupling weights"); end
-        coupling_weights = create_weight_array(npcf)
-    end
-
-    if npcf.verb; println("Iterating over primary particles"); end
-
-    # Iterate over first particle
-    @sync @distributed for i in 1:Npart
+    # Iterate over first particle in required range
+    for i in imin:imax
         p1 = positions[i,:]
         w1 = weights[i]
 
@@ -422,7 +523,7 @@ function compute_npcf_pairwise(inputs::Matrix{Float64}, npcf::NPCF)
         # Empty array
         al .= 0
 
-        # Iterate over second particle and compute al array
+        # Iterate over all secondary particles and compute al array
         for j in 1:Npart
             p2 = shift_positions[j,:]
             w2 = weights[j]
@@ -565,11 +666,6 @@ function compute_npcf_pairwise(inputs::Matrix{Float64}, npcf::NPCF)
             error("Not yet implemented!")
         end
     end
-
-    # Apply normalization to the output array
-    normalize_npcf!(output, npcf)
-
-    if npcf.verb; @printf("Calculations complete!\n"); end
 
     return output
 end;

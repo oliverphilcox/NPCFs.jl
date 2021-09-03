@@ -1,7 +1,11 @@
-using Pkg
+using Pkg, Distributed
+println("Using $(nworkers()) processes")
+@everywhere using Pkg
 Pkg.activate(".")
+@everywhere Pkg.activate(".")
 Pkg.instantiate()
 using NPCFs
+@everywhere using NPCFs
 
 # Addition testing packages
 using Statistics, Random, Plots, TimerOutputs, Printf
@@ -30,10 +34,12 @@ end
 npcf = NPCF(N=_N,D=_D,verb=true,periodic=_periodic,coords=_coords,r_min=_r_min,r_max=_r_max,lmax=_lmax);
 
 ## First run to compile
+println("Running to compile...\n")
 compute_npcf_simple(pos, npcf);
 compute_npcf_pairwise(pos, npcf);
 
 ## Second run to time
+println("Running to time...\n")
 @time npcf_output1 = compute_npcf_simple(pos, npcf);
 @time npcf_output2 = compute_npcf_pairwise(pos, npcf);
 
