@@ -154,7 +154,7 @@ function compute_npcf_simple(inputs::Matrix{Float64}, npcf::NPCF)
     check_inputs(inputs, npcf)
 
     Npart = length(inputs[:,1])
-    if npcf.verb; @printf("\nAnalyzing dataset with %d particles using %d workers by summing over all N-tuplets of galaxies\n",Npart,nworkers()); end
+    if npcf.verb; @printf("\nAnalyzing dataset with %d particles using %d worker(s) by summing over all N-tuplets of galaxies\n",Npart,nworkers()); end
 
     # Set up output array to hold NPCF
     output = create_npcf_array(npcf)
@@ -216,7 +216,7 @@ function compute_npcf_pairwise(inputs::Matrix{Float64}, npcf::NPCF)
     check_inputs(inputs, npcf)
 
     Npart = length(inputs[:,1])
-    if npcf.verb; @printf("\nAnalyzing dataset with %d particles using %d workers by summing over all N-tuplets of galaxies\n",Npart,nworkers()); end
+    if npcf.verb; @printf("\nAnalyzing dataset with %d particles using %d worker(s) by summing over all N-tuplets of galaxies\n",Npart,nworkers()); end
 
     # Set up output array to hold NPCF
     output = create_npcf_array(npcf)
@@ -227,7 +227,7 @@ function compute_npcf_pairwise(inputs::Matrix{Float64}, npcf::NPCF)
         coupling_weights = create_weight_array(npcf)
     else
         # create an empty array for compatibility
-        coupling_weights = []]
+        coupling_weights = []
     end
 
     # Work out how many workers are present and chunk memory

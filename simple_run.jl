@@ -46,4 +46,4 @@ println("Running to time...\n")
 ## Error diagnostics
 mean_err = mean(npcf_output1-npcf_output2)/mean(npcf_output2)
 std_err = std(npcf_output1-npcf_output2)/mean(npcf_output2)
-@printf("\nError: %.1e +- %.1e",mean_err,std_err)
+@printf("\nError: %.1e +- %.1e\n",mean_err,std_err)
