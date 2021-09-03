@@ -1,7 +1,7 @@
 name = "NPCFs"
 uuid = "e414b0ab-d40c-4bbc-9f57-095db2c1b88c"
 authors = ["Oliver Philcox <ohep2@cantab.ac.uk>"]
-version = "0.1.0"
+version = "0.2.0"
 
 [deps]
 ClassicalOrthogonalPolynomials = "b30e2e7b-c4ee-47da-9d5f-2c5c27239acd"
