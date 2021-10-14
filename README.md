@@ -25,8 +25,7 @@ To install the ```NPCFs.jl``` package simply run the following in a Julia termin
 ```julia
 ]add NPCFs
 ```
-
-The package can then be loaded using ```using NPCFs```, as usual. To run the test suite, use the command ```]test NPCFs```.
+(Alternatively, one can use ```]add "https://github.com/oliverphilcox/NPCFs.git``` to download from source.) The package can then be loaded using ```using NPCFs```, as usual. To run the test suite, use the command ```]test NPCFs```.
 
 ## Quickstart Examples
 
