@@ -23,10 +23,10 @@ Efficient computation of isotropic N-point correlation function (NPCF) in Julia.
 
 To install the ```NPCFs.jl``` package simply run the following in a Julia terminal:
 ```julia
-]add "https://github.com/oliverphilcox/NPCFs.jl"
+]add NPCFs
 ```
 
-The package can then be loaded using ```using NPCFs```, as usual.
+The package can then be loaded using ```using NPCFs```, as usual. To run the test suite, use the command ```]test NPCFs```.
 
 ## Quickstart Examples
 
